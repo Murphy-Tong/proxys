@@ -1,16 +1,16 @@
-import { Socket } from 'net';
+import {Socket} from 'net';
 
 type Listeners = {
-    [key in 'error' | 'end' | 'timeout']: any
+    [key in 'error' | 'end' | 'timeout' | 'close']: any
 }
-type QueneItem = { socket: Socket, next: QueneItem, pre: QueneItem, expiredTime: number, listeners: Listeners }
+type QueneItem = { socket: Socket, next: QueneItem, pre: QueneItem, expiredTime: number, listeners: Listeners, id: number }
 
 type Queue = QueneItem
 
 export type IOptios = {
     maxSize?: number
     /**
-     * -1 nerver ,0 right now
+     * -1 never ,0 right now
      */
     timeout?: number
 }
@@ -24,6 +24,7 @@ export class SocketChain {
     pool: Queue
     options: IOptios
     timeoutRef: any
+    id = 1
 
     constructor(options?: IOptios) {
         this.options = {
@@ -31,11 +32,17 @@ export class SocketChain {
             ...options || {}
         }
         this.pool = {} as Queue
-        this.pool.next = this.pool
-        this.pool.pre = this.pool
+        this.initPool()
     }
 
-    alloced(socket: Socket) {
+    private initPool() {
+        this.pool = {} as Queue
+        this.pool.next = this.pool
+        this.pool.pre = this.pool
+        this.pool.id = 0
+    }
+
+    alloc(socket: Socket) {
         const item = this.addLast(socket)
         if (!item) {
             return
@@ -57,12 +64,12 @@ export class SocketChain {
 
 
     use() {
-        return this.peekOne()
+        return this.peekOne()?.socket
     }
 
     destroy() {
         this.timeoutRef && clearTimeout(this.timeoutRef)
-        this.pool = {} as Queue
+        this.initPool()
     }
 
     private ensureTimeoutRunning() {
@@ -74,7 +81,7 @@ export class SocketChain {
 
     private startNextTimeout() {
         const first = this.pool.next
-        if (!first || first.expiredTime === -1) {
+        if (!first || first === this.pool || first.expiredTime === -1) {
             return
         }
         const currentTime = new Date().valueOf()
@@ -93,9 +100,12 @@ export class SocketChain {
     }
 
     removeExpiredItems() {
+        if (this.options.timeout === -1) {
+            return
+        }
         let ptr = this.pool.next
         const currentTime = new Date().valueOf()
-        while (ptr) {
+        while (ptr !== this.pool) {
             const next = ptr.next
             if (currentTime >= ptr.expiredTime) {
                 this.remove(ptr)
@@ -109,16 +119,12 @@ export class SocketChain {
         this.removeCallback(item)
         const pre = item.pre
         const next = item.next
-        if (pre === next) {
-            this.pool.next = this.pool
-            this.pool.pre = this.pool
-        } else {
-            pre.next = next
-            next.pre = pre
-        }
+        pre.next = next
+        next.pre = pre
         if (error) {
-            console.log('remoed with error', error)
+            console.log('removed with error', error)
         }
+        return item
     }
 
     private removeCallback(item: QueneItem) {
@@ -133,7 +139,7 @@ export class SocketChain {
         if (this.pool.next === this.pool) {
             return null
         }
-        return this.pool.next
+        return this.remove(this.pool.next)
     }
 
     private addCallbacks(item: QueneItem) {
@@ -147,11 +153,15 @@ export class SocketChain {
             },
             'timeout': () => {
                 this.remove(item, new Error('timeout'))
+            },
+            'close': () => {
+                this.remove(item)
             }
         }
         socket?.once('end', item.listeners.end)
         socket?.once('error', item.listeners.error)
         socket?.once('timeout', item.listeners.timeout)
+        socket?.once('close', item.listeners.close)
     }
 
     private generateExpiredTime() {
@@ -161,10 +171,15 @@ export class SocketChain {
         return this.options.timeout + new Date().valueOf()
     }
 
+
     private createItem(socket: Socket) {
+        Object.defineProperty(socket, "____id", {
+            value: this.id
+        })
         return {
             socket,
-            expiredTime: this.generateExpiredTime()
+            expiredTime: this.generateExpiredTime(),
+            id: this.id++
         } as QueneItem
     }
 
@@ -173,18 +188,38 @@ export class SocketChain {
             return
         }
         const cur = this.createItem(socket)
-        const last = this.pool.pre
-        if (last === this.pool) {
-            this.pool.next = cur
-            cur.pre = this.pool
-            this.pool.pre = cur
-            cur.next = this.pool
+        if (this.options.timeout === -1) {
+            this.addAfter(this.pool.pre, cur)
         } else {
-            this.pool.next = cur
-            this.pool.pre = cur
-            cur.pre = this.pool
-            cur.next = this.pool
+            this.addAfter(this.findInsertPosition(cur.expiredTime), cur);
         }
         return cur
     }
+
+    private findInsertPosition(time: number) {
+        let ptr = this.pool.next
+        if (ptr === this.pool) {
+            return this.pool
+        }
+        while (ptr !== this.pool) {
+            const next = ptr.next
+            if (next === this.pool) {
+                return ptr
+            }
+            if (time >= ptr.expiredTime && time < next.expiredTime) {
+                return ptr
+            }
+            ptr = ptr.next
+        }
+        return ptr.pre
+    }
+
+    private addAfter(pre: QueneItem, cur: QueneItem) {
+        const next = pre.next
+        pre.next = cur
+        cur.next = next
+        next.pre = cur
+        cur.pre = pre
+    }
+
 }

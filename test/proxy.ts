@@ -1,10 +1,11 @@
+//@jest-ignore
 // import { Socket } from 'net';
 // import * as https from 'http'
 // import * as agent from '../src/agent'
 // import HttpsConnector from '../src/httpsProxyServerConnector'
-
+//
 // let lastS: any = null
-
+//
 // const proxyAgent = new agent.ProxyAgent({
 //     proxyHostname: '120.42.46.226',
 //     proxyPort: 6666,
@@ -12,8 +13,8 @@
 //     proxyConnnectTimeout: 2000,
 //     internalPool: false,
 // }, new HttpsConnector())
-
-
+//
+//
 // async function reqTest() {
 //     const req = https.get("http://www.baidu.com", {
 //         headers: {
@@ -31,7 +32,7 @@
 //         console.log(res.headers)
 //         res.on('data', function (buf) {
 //             console.log(buf.length)
-
+//
 //         })
 //         res.on('end', () => {
 //             console.log('end')
@@ -40,18 +41,18 @@
 //             }, 4000);
 //         })
 //     })
-
+//
 //     req.on('socket', function (s) {
 //         if (lastS) {
 //             console.log(lastS === s)
 //         }
 //         lastS = s
 //     })
-
+//
 //     req.end()
 // }
-
-
+//
+//
 // async function reqTest2(socket: Socket) {
 //     socket.write('GET / HTTP/1.1')
 //     socket.write('\r\n')
@@ -62,10 +63,10 @@
 //             reqTest2(socket)
 //         }, 5000);
 //     })
-
+//
 // }
-
-
+//
+//
 // // proxyAgent.createConnection({
 // //     host: 'www.baidu.com',
 // //     protocol: 'http'
@@ -77,4 +78,4 @@
 // //     reqTest(socket)
 // // })
 
-// reqTest()
+// console.log('')
